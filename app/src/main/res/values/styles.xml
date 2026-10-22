@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.Halo" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#080A0D</item>
+        <item name="android:navigationBarColor">#080A0D</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#C9E4DE</item>
+    </style>
+    <color name="launcher_background">#0A0C10</color>
+</resources>

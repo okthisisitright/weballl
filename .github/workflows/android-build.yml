@@ -1,0 +1,80 @@
+name: Build HALO Android
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests, Android lint, and installable debug APK
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+      - name: Name APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/HALO-Android-debug.apk
+          cd dist
+          sha256sum HALO-Android-debug.apk > HALO-Android-debug.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HALO-Android-debug
+          path: dist/HALO-Android-debug.apk*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.html
+  android-15-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable the runner's KVM device
+        run: sudo chmod a+rw /dev/kvm
+      - name: Real Android 15 integration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          profile: pixel_5
+          cores: 2
+          ram-size: 2048M
+          disable-animations: true
+          script: |
+            ./gradlew assembleDebug assembleDebugAndroidTest
+            adb install -r -t app/build/outputs/apk/debug/app-debug.apk
+            adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell appops set com.halo.island SYSTEM_ALERT_WINDOW allow
+            adb shell cmd notification allow_listener com.halo.island/.system.HaloNotificationListener
+            adb shell pm grant com.halo.island android.permission.POST_NOTIFICATIONS
+            ./gradlew connectedDebugAndroidTest --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-15-integration-reports
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
