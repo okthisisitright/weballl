@@ -26,7 +26,9 @@ import com.halo.island.HaloGraph
 import com.halo.island.core.*
 import com.halo.island.data.MediaTrack
 import com.halo.island.system.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class Destination(
     val label: String,
@@ -229,7 +231,7 @@ private fun HomeScreen(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                if (running) "Your island is alive" else "Make room for something new",
+                if (running) "Your island is alive" else "Enable HALO",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
             )
@@ -330,7 +332,10 @@ private fun LivePreview(
     var demoPlaying by rememberSaveable { mutableStateOf(true) }
     var demoPosition by rememberSaveable { mutableLongStateOf(64000) }
     val context = LocalContext.current
-    val bitmap = remember { studioBackdrop() }
+    val bitmap by
+        produceState<android.graphics.Bitmap?>(null) {
+            value = withContext(Dispatchers.Default) { studioBackdrop() }
+        }
     var bounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     val sample =
         remember(demoPlaying, demoPosition) {
@@ -365,12 +370,14 @@ private fun LivePreview(
                 .clip(RoundedCornerShape(30.dp))
                 .onGloballyPositioned { bounds = it.boundsInRoot() }
         ) {
-            Image(
-                bitmap.asImageBitmap(),
-                null,
-                Modifier.fillMaxSize(),
-                contentScale = ContentScale.FillBounds,
-            )
+            bitmap?.let { scene ->
+                Image(
+                    scene.asImageBitmap(),
+                    null,
+                    Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds,
+                )
+            }
             Column(Modifier.align(Alignment.TopStart).padding(18.dp)) {
                 Text(
                     if (demo == null) "LIVE MATERIAL PREVIEW"
@@ -404,7 +411,8 @@ private fun LivePreview(
                             null,
                         )
                     else notification,
-                    backdrop = AppBackdrop(bitmap, bounds),
+                    backdrop = bitmap?.let { AppBackdrop(it, bounds) },
+                    timerInteractive = demo != "Timer",
                     onTap = { if (demo != null) expanded = !expanded else g.tap() },
                     onCollapse = { if (demo != null) expanded = false else g.collapse() },
                     onQuick = { if (demo == null) g.quick() },
@@ -421,7 +429,13 @@ private fun LivePreview(
                     onSeekingChange = { if (demo == null) g.seeking(it) },
                     onSource = { if (demo == null) g.media.openSource() },
                     onTimerPause = { if (demo == null) g.timer.pauseResume() },
-                    onTimerCancel = { if (demo != null) demo = null else g.timer.cancel() },
+                    onTimerCancel = {
+                        if (demo != null) demo = null
+                        else {
+                            g.timer.cancel()
+                            g.collapse()
+                        }
+                    },
                     onStartTimer = { if (demo == null) g.timer.start(300000) },
                     onOpenSettings = {
                         demo = null
@@ -443,7 +457,9 @@ private fun LivePreview(
                 )
             }
             Text(
-                "Tap to expand  ·  Hold for more",
+                if (demo == null) "Tap to expand  ·  Hold for more"
+                else if (demo in listOf("Music", "Timer")) "Sample only · tap to expand"
+                else "Sample event · no live data",
                 fontSize = 10.sp,
                 color = Silver.copy(alpha = .5f),
                 modifier = Modifier.align(Alignment.BottomCenter).padding(18.dp),
@@ -820,7 +836,15 @@ private fun EventsScreen(
                 OutlinedButton(onClick = g.timer::pauseResume) {
                     Text(if (timer.running) "Pause" else "Resume")
                 }
-            if (timer.total > 0) TextButton(onClick = g.timer::cancel) { Text("Clear") }
+            if (timer.total > 0)
+                TextButton(
+                    onClick = {
+                        g.timer.cancel()
+                        g.collapse()
+                    }
+                ) {
+                    Text("Clear")
+                }
         }
         Text(
             "Runs while another app is open. Keep HALO enabled for foreground timer monitoring. An inexact Android alarm is the fallback after process death; battery restrictions may delay it.",

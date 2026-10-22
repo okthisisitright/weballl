@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.halo.island.core.*
 import com.halo.island.halo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Only app-owned pixels. Never captures a screen or another application's window. */
 data class AppBackdrop(val bitmap: Bitmap, val bounds: Rect)
@@ -56,9 +58,18 @@ fun GlassRenderer(
     val quality = effectiveQuality(settings.quality, Build.VERSION.SDK_INT, power, low)
     val shape = RoundedCornerShape(radius.dp)
     var bounds by remember { mutableStateOf(Rect.Zero) }
-    val holder = remember {
-        if (Build.VERSION.SDK_INT >= 33) runCatching { OpticalShader() }.getOrNull() else null
-    }
+    val needsShader =
+        !overlay &&
+            backdrop != null &&
+            Build.VERSION.SDK_INT >= 33 &&
+            quality in listOf(GlassQuality.ULTRA, GlassQuality.HIGH)
+    val holder by
+        produceState<OpticalShader?>(null, needsShader) {
+            value =
+                if (needsShader && Build.VERSION.SDK_INT >= 33)
+                    withContext(Dispatchers.Default) { runCatching { OpticalShader() }.getOrNull() }
+                else null
+        }
     val tint = Color(if (settings.customTint != 0L) settings.customTint else settings.theme.tint)
     Canvas(
         modifier
@@ -74,14 +85,15 @@ fun GlassRenderer(
     ) {
         val r = radius.dp.toPx().coerceAtMost(minOf(size.width, size.height) / 2)
         drawRoundRect(tint.copy(alpha = settings.opacity), cornerRadius = CornerRadius(r))
+        val optical = holder
         if (
             !overlay &&
                 backdrop != null &&
-                holder != null &&
+                optical != null &&
                 Build.VERSION.SDK_INT >= 33 &&
                 quality in listOf(GlassQuality.ULTRA, GlassQuality.HIGH)
         ) {
-            runCatching { holder.draw(this, backdrop, bounds, settings, r, quality) }
+            runCatching { optical.draw(this, backdrop, bounds, settings, r, quality) }
         }
         if (quality != GlassQuality.LITE) {
             drawRoundRect(

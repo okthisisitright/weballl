@@ -31,6 +31,7 @@ data class MediaTrack(
     val speed: Float,
     val playing: Boolean,
     val actions: Long,
+    val canOpen: Boolean = false,
 ) {
     fun supports(action: Long) = actions and action != 0L
 
@@ -204,6 +205,14 @@ class MediaSessionRepository(
                                 p?.playbackSpeed ?: 1f,
                                 p?.state == PlaybackState.STATE_PLAYING,
                                 p?.actions ?: 0,
+                                canOpen =
+                                    runCatching {
+                                            c.sessionActivity != null ||
+                                                context.packageManager.getLaunchIntentForPackage(
+                                                    c.packageName
+                                                ) != null
+                                        }
+                                        .getOrDefault(false),
                             )
                         }
                     }

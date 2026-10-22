@@ -127,4 +127,20 @@ class IslandStateMachineTest {
             m.dispatch(IslandEvent.Context(IslandContext(true, false, true, false)), 2),
         )
     }
+
+    @Test
+    fun automaticMediaExpansionDoesNotInterruptCharging() {
+        val m = IslandStateMachine()
+        m.dispatch(IslandEvent.Temporary(IslandMode.CHARGING, 50, 500), 0)
+        m.dispatch(IslandEvent.Context(IslandContext(media = true, playing = true)), 1)
+        assertEquals(IslandMode.CHARGING, m.dispatch(IslandEvent.AutoExpandMedia, 2))
+        assertEquals(IslandMode.MEDIA_EXPANDED, m.dispatch(IslandEvent.Tick, 501))
+    }
+
+    @Test
+    fun automaticExpansionNeverTogglesAnExpandedPanelClosed() {
+        val m = mediaMachine()
+        m.dispatch(IslandEvent.Tap, 0)
+        assertEquals(IslandMode.MEDIA_EXPANDED, m.dispatch(IslandEvent.AutoExpandMedia, 1))
+    }
 }

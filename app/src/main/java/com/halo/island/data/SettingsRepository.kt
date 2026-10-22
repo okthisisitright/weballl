@@ -9,21 +9,32 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 
 val Context.haloStore by preferencesDataStore("halo")
 
 class SettingsRepository(private val context: Context, private val scope: CoroutineScope) {
     val loaded = CompletableDeferred<Unit>()
     private val key = stringPreferencesKey("settings_v1")
-    val state =
-        context.haloStore.data
-            .catch {
-                if (it is IOException) emit(androidx.datastore.preferences.core.emptyPreferences())
-                else throw it
-            }
-            .map { SettingsCodec.decode(it[key].orEmpty()) }
-            .onEach { loaded.complete(Unit) }
-            .stateIn(scope, SharingStarted.Eagerly, HaloSettings())
+    private val _state = MutableStateFlow(HaloSettings())
+    val state = _state.asStateFlow()
+
+    init {
+        scope.launch {
+            context.haloStore.data
+                .catch {
+                    if (it is IOException)
+                        emit(androidx.datastore.preferences.core.emptyPreferences())
+                    else throw it
+                }
+                .map { SettingsCodec.decode(it[key].orEmpty()) }
+                .collect { saved ->
+                    _state.value = saved
+                    // Readiness means consumers can immediately read the restored value.
+                    loaded.complete(Unit)
+                }
+        }
+    }
 
     suspend fun update(change: (HaloSettings) -> HaloSettings) {
         context.haloStore.edit {

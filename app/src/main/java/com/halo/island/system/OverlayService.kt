@@ -206,7 +206,10 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
                             onSeekingChange = halo::seeking,
                             onSource = halo.media::openSource,
                             onTimerPause = halo.timer::pauseResume,
-                            onTimerCancel = halo.timer::cancel,
+                            onTimerCancel = {
+                                halo.timer.cancel()
+                                halo.collapse()
+                            },
                             onStartTimer = {
                                 if (settings.timerEnabled) halo.timer.start(5 * 60 * 1000)
                             },

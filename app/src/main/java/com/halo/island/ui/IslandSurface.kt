@@ -46,6 +46,7 @@ fun IslandSurface(
     overlay: Boolean = false,
     backdrop: AppBackdrop? = null,
     maxWidthDp: Float? = null,
+    timerInteractive: Boolean = true,
     onTap: () -> Unit = {},
     onCollapse: () -> Unit = {},
     onQuick: () -> Unit = {},
@@ -179,6 +180,7 @@ fun IslandSurface(
                             { feedback(onTimerPause) },
                             { feedback(onTimerCancel) },
                             onCollapse,
+                            timerInteractive,
                         )
                     IslandMode.CHARGING,
                     IslandMode.BATTERY_STATUS -> BatteryPanel(battery, accent, settings)
@@ -362,7 +364,7 @@ private fun MediaExpanded(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
-                Modifier.weight(1f).clickable(onClick = onSource),
+                Modifier.weight(1f).clickable(enabled = track.canOpen, onClick = onSource),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -381,7 +383,11 @@ private fun MediaExpanded(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(top = 5.dp),
         ) {
-            Artwork(track, s.artSize.dp, Modifier.clickable(onClick = onSource))
+            Artwork(
+                track,
+                s.artSize.dp,
+                Modifier.clickable(enabled = track.canOpen, onClick = onSource),
+            )
             Column(Modifier.padding(start = 16.dp).weight(1f)) {
                 AnimatedContent(
                     track.title,
@@ -521,6 +527,7 @@ private fun TimerExpanded(
     onPause: () -> Unit,
     onCancel: () -> Unit,
     onCollapse: () -> Unit,
+    interactive: Boolean,
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -558,7 +565,9 @@ private fun TimerExpanded(
             modifier = Modifier.padding(top = 12.dp),
         ) {
             if (timer.active)
-                OutlinedButton(onClick = onPause) { Text(if (timer.running) "Pause" else "Resume") }
+                OutlinedButton(onClick = onPause, enabled = interactive) {
+                    Text(if (!interactive) "Sample" else if (timer.running) "Pause" else "Resume")
+                }
             TextButton(onClick = onCancel) {
                 Text(if (timer.finished) "Done" else "Cancel", color = Muted)
             }
@@ -647,7 +656,9 @@ private fun BatteryPanel(b: BatteryState, accent: Color, s: HaloSettings) {
 @Composable
 private fun NotificationPanel(n: NotificationPreview?, onOpen: () -> Unit, onCollapse: () -> Unit) {
     Row(
-        Modifier.fillMaxSize().clickable(onClick = onOpen).padding(18.dp),
+        Modifier.fillMaxSize()
+            .clickable(enabled = n?.intent != null, onClick = onOpen)
+            .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -672,7 +683,12 @@ private fun NotificationPanel(n: NotificationPreview?, onOpen: () -> Unit, onCol
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (n?.title == null) Text("Tap to open", fontSize = 13.sp, color = Silver)
+            if (n?.title == null)
+                Text(
+                    if (n?.intent != null) "Tap to open" else "Notification preview",
+                    fontSize = 13.sp,
+                    color = Silver,
+                )
         }
         SmallButton(Icons.Rounded.Close, "Dismiss preview", onCollapse, 28.dp)
     }
@@ -707,7 +723,7 @@ private fun QuickActions(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (s.timerEnabled)
                 ActionTile(Icons.Rounded.Timer, "5 min", onTimer, Modifier.weight(1f))
-            ActionTile(Icons.Rounded.Tune, "Studio", onSettings, Modifier.weight(1f))
+            ActionTile(Icons.Rounded.Tune, "HALO", onSettings, Modifier.weight(1f))
             ActionTile(Icons.Rounded.PowerSettingsNew, "Stop", onStop, Modifier.weight(1f))
         }
         Text(

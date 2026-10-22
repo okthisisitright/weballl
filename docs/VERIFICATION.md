@@ -11,9 +11,9 @@ Executed against the native Android sources in this branch with JDK 17, Gradle 8
 | Check | Actual result |
 |---|---|
 | Kotlin, Android resources, manifest and debug APK assembly | Passed |
-| Unit tests | **41 executed, 41 passed, 0 failures/errors/skips** |
+| Unit tests | **43 executed, 43 passed, 0 failures/errors/skips** |
 | Android lint | Passed, **0 errors, 9 warnings** |
-| Android integration test APK compilation | Passed; **5 tests compiled, execution not yet established locally** |
+| Android integration test APK compilation | Passed; **5 tests compiled; initial run 4 passed / 1 fixture-visibility failure; later run killed during startup** |
 | APK signature (`apksigner verify --verbose`) | Passed, APK Signature Scheme v2, one signer |
 | ZIP alignment (`zipalign -c -P 16 4`) | Passed |
 | Manifest/package inspection (`aapt dump badging`) | `com.halo.island`, version 1.0.0, min SDK 26, target/compile SDK 36 |
@@ -34,20 +34,32 @@ Build output: `app/build/outputs/apk/debug/app-debug.apk`.
 SHA-256 of the local handover APK:
 
 ```text
-f90ba788e7ade5ac3aabcfeac09d95efea5642317e8b15da8757073e627a7be1
+ae3cb554a6c715fa8e295f9710658c705608f3fbbe9f9c06a7f75e511c9bf31a
 ```
 
 A `.sha256` file is beside the handover APK. The local debug signing key is not committed. CI creates its own debug-signed APK, so its checksum/signing identity will differ. Uninstall a differently signed build before switching between local and CI debug APKs; preserve any preferences you need first.
 
-## Runtime validation limits
+## Runtime validation and remaining device tests
 
-This cloud host has **no `/dev/kvm`**. Android 15 Google APIs and AOSP x86_64 emulators were installed using the Android SDK tools and attempted in software mode. Both exposed ADB during incomplete bootstrap. Attempts to install HALO encountered Android's own `StorageManagerService` / missing `PackageManagerInternal` initialization failure. System logs also showed SystemUI startup ANRs and system-server restarts under software emulation. These occurred **before HALO was installed or launched**. Special-access grant attempts before installation could not succeed.
+This cloud host has **no `/dev/kvm`**. Android 15 Google APIs and AOSP x86_64 emulators were attempted in software mode. Early guest bootstrap had `StorageManagerService` / missing `PackageManagerInternal` failures, SystemUI ANRs and system-server restarts. The AOSP guest eventually completed boot, and both HALO's app and test APKs installed successfully.
 
-A writable emulator state location and a direct Python ADB client resolved separate read-only-home/ADB-tool startup issues, but that does not establish Android guest readiness. No application runtime pass, screenshot review, cross-app touch pass-through, player compatibility, GPU performance, battery measurement, or Vivo persistence result is claimed from these attempts. A PID, ADB connection, or early package service was not accepted as proof of readiness.
+The first complete instrumentation run executed five tests:
 
-Five instrumentation tests are implemented and compiled: app launch/DataStore persistence, real MediaSession discovery plus play/pause/previous/next/seek and artwork updates/disconnect, overlay service survival outside the main activity, injected touch pass-through to a separate test APK, and real local countdown pause/resume/completion. The touch probe exists only in the test APK. GitHub Actions includes an Android 15 **KVM-backed** integration job with explicit test-only permission grants and Gradle's connected-test result reporting. A configured job is not a passing CI run; consult its actual run and reports.
+| Device check | Observed result |
+|---|---|
+| Overlay service remains running after leaving HALO and stops cleanly | Passed |
+| Local timer counts down, pauses, resumes and completes | Passed |
+| Real MediaSession discovery, play/pause/previous/next/seek callbacks, artwork/metadata changes and disconnect | Passed using a local test session |
+| Launch and theme persistence through a fresh DataStore repository read | Passed |
+| Injected outside touch reaches a separate test application | Failed while finding the probe activity, before touch injection |
 
-Acceptance A–S therefore have source implementations and relevant pure-logic coverage, but **device acceptance remains unverified**. Acceptance T (a valid assembled Android APK) is verified as above. Use [the device checklist](DEVICE_TESTING.md) on a functioning Android 15 emulator and the actual Vivo phone.
+The touch harness was corrected to launch from a visible activity, inspect interactive windows, set touchscreen input source, and explicitly assert a bounded HALO window. A later full-suite attempt was killed by Android during cold startup **before tests executed**. Logs show very slow bytecode verification and startup ANRs; no HALO Java exception was recorded for that attempt. Android's standard `cmd package compile -m verify -f` completed successfully for both packages. Remaining device execution was then deferred to the user at their request. **No five-test passing run is claimed.**
+
+HALO drew its home UI, but cold launches in this software emulator also exceeded startup timeouts and displayed an ANR dialog. Shader compilation and preview bitmap generation were moved off the main thread; shaders are not constructed for the overlay or Lite fallback. These changes compile and pass the unit/lint checks. Cold-start responsiveness, motion quality and battery performance still require a real device or hardware-accelerated emulator. The captured early ANR screenshot is diagnostic evidence, not a finished product screenshot.
+
+The five instrumentation tests are included in the repository and a KVM-backed Android 15 GitHub Actions job. Its actual result could not be read because this cloud environment blocks `api.github.com`; workflow configuration and successful Git pushes do not establish CI success. See [the device checklist](DEVICE_TESTING.md). Permission grants in the automated setup are test-only shell grants; real users must use Android's consent/settings flows.
+
+The latest APK was assembled, signature/alignment checked, and installed in the emulator. Named third-party players, Vivo/Funtouch persistence, permission revocation/recovery, charging transitions, touch pass-through after the harness correction, cutout/font variants and visual motion quality remain for device testing. A standalone shader-check utility was prepared but not executed; it is not counted as validation. No measured GPU, frame-rate, battery or broad player-compatibility claim is made.
 
 ## Platform fallbacks and known constraints
 

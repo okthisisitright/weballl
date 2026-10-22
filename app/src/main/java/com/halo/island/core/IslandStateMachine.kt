@@ -16,6 +16,8 @@ sealed interface IslandEvent {
 
     data class Seeking(val active: Boolean) : IslandEvent
 
+    data object AutoExpandMedia : IslandEvent
+
     data object Tap : IslandEvent
 
     data object Collapse : IslandEvent
@@ -62,6 +64,9 @@ class IslandStateMachine {
                 if (context.media)
                     manual =
                         if (event.active) IslandMode.MEDIA_SEEKING else IslandMode.MEDIA_EXPANDED
+            }
+            IslandEvent.AutoExpandMedia -> {
+                if (context.media && context.playing) manual = IslandMode.MEDIA_EXPANDED
             }
             IslandEvent.Tap -> {
                 temporary = null

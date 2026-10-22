@@ -53,7 +53,7 @@ class HaloGraph(val context: Context) {
                         )
                     )
                     if (s.autoExpand && s.mediaEvents && m?.playing == true && !before.playing) {
-                        dispatch(IslandEvent.Tap)
+                        dispatch(IslandEvent.AutoExpandMedia)
                         scheduleCollapse()
                     }
                 }
@@ -82,16 +82,19 @@ class HaloGraph(val context: Context) {
     }
 
     fun tap() {
+        clearTransient()
         dispatch(IslandEvent.Tap)
         scheduleCollapse()
     }
 
     fun collapse() {
         collapseJob?.cancel()
+        clearTransient()
         dispatch(IslandEvent.Collapse)
     }
 
     fun quick() {
+        clearTransient()
         dispatch(IslandEvent.QuickActions)
         scheduleCollapse()
     }
@@ -103,18 +106,28 @@ class HaloGraph(val context: Context) {
         if (active) collapseJob?.cancel() else scheduleCollapse()
     }
 
+    private fun clearTransient() {
+        transientJob?.cancel()
+        _notification.value = null
+    }
+
     private fun scheduleCollapse() {
-        if (mode.value == IslandMode.MEDIA_SEEKING) return
         collapseJob?.cancel()
+        if (
+            mode.value == IslandMode.MEDIA_SEEKING ||
+                (machine.temporaryExpiry ?: 0) > SystemClock.elapsedRealtime()
+        )
+            return
         collapseJob =
             scope.launch {
                 delay(settings.state.value.collapseSeconds * 1000L)
-                dispatch(IslandEvent.Collapse)
+                collapse()
             }
     }
 
     fun temporary(mode: IslandMode, priority: Int, duration: Long) {
         dispatch(IslandEvent.Temporary(mode, priority, SystemClock.elapsedRealtime() + duration))
+        collapseJob?.cancel()
         transientJob?.cancel()
         transientJob =
             scope.launch {
@@ -124,6 +137,15 @@ class HaloGraph(val context: Context) {
                         .coerceAtLeast(0)
                 )
                 dispatch(IslandEvent.Tick)
+                if (
+                    this@HaloGraph.mode.value in
+                        setOf(
+                            IslandMode.MEDIA_EXPANDED,
+                            IslandMode.TIMER_EXPANDED,
+                            IslandMode.QUICK_ACTIONS,
+                        )
+                )
+                    scheduleCollapse()
                 if (this@HaloGraph.mode.value != IslandMode.NOTIFICATION_PREVIEW)
                     _notification.value = null
             }

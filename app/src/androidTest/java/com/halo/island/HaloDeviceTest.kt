@@ -35,10 +35,7 @@ class HaloDeviceTest {
                 graph.settings.update { it.preset(ThemePreset.FROST) }
                 val fresh = com.halo.island.data.SettingsRepository(context, graph.scope)
                 fresh.loaded.await()
-                assertEquals(
-                    ThemePreset.FROST,
-                    fresh.state.first { s -> s.theme == ThemePreset.FROST }.theme,
-                )
+                assertEquals(ThemePreset.FROST, fresh.state.value.theme)
             } finally {
                 graph.settings.update { old }
             }
@@ -190,7 +187,7 @@ class HaloDeviceTest {
     @Test
     fun touchesOutsideOverlayReachAnotherApplication() {
         assertTrue(context.permissionState().overlay)
-        ActivityScenario.launch(MainActivity::class.java).use {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             try {
                 onMain { OverlayService.start(context) }
                 runBlocking { withTimeout(10000) { context.halo.running.first { it } } }
@@ -204,19 +201,52 @@ class HaloDeviceTest {
                             )
                         )
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                instrumentation.context.startActivity(intent)
+                val ui = instrumentation.uiAutomation
+                ui.serviceInfo =
+                    ui.serviceInfo.apply {
+                        flags =
+                            flags or
+                                android.accessibilityservice.AccessibilityServiceInfo
+                                    .FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                    }
+                scenario.onActivity { activity -> activity.startActivity(intent) }
+                fun findProbe(label: String): android.view.accessibility.AccessibilityNodeInfo? =
+                    ui.windows
+                        .mapNotNull { it.root }
+                        .flatMap { it.findAccessibilityNodeInfosByText(label) }
+                        .firstOrNull {
+                            it.isVisibleToUser && it.packageName == "com.halo.island.test"
+                        }
                 val deadline = System.currentTimeMillis() + 15000
                 var target: android.view.accessibility.AccessibilityNodeInfo? = null
                 while (target == null && System.currentTimeMillis() < deadline) {
-                    target =
-                        instrumentation.uiAutomation.rootInActiveWindow
-                            ?.findAccessibilityNodeInfosByText("Tap target")
-                            ?.firstOrNull()
+                    target = findProbe("Tap target")
                     if (target == null) Thread.sleep(200)
                 }
                 assertNotNull("Separate test application is visible", target)
                 val rect = android.graphics.Rect()
                 target!!.getBoundsInScreen(rect)
+                assertTrue("Real overlay service is still running", context.halo.running.value)
+                val overlayBounds =
+                    ui.windows
+                        .firstOrNull { window ->
+                            val frame = android.graphics.Rect()
+                            window.getBoundsInScreen(frame)
+                            window.root?.packageName == "com.halo.island" &&
+                                frame.height() in
+                                    1 until (context.resources.displayMetrics.heightPixels / 2)
+                        }
+                        ?.let { window ->
+                            android.graphics.Rect().also { window.getBoundsInScreen(it) }
+                        }
+                assertNotNull(
+                    "HALO exposes a compact visible window rather than a full-screen input surface",
+                    overlayBounds,
+                )
+                assertFalse(
+                    "Probe is outside island input bounds",
+                    overlayBounds!!.contains(rect.centerX(), rect.centerY()),
+                )
                 val now = android.os.SystemClock.uptimeMillis()
                 val down =
                     android.view.MotionEvent.obtain(
@@ -236,6 +266,8 @@ class HaloDeviceTest {
                         rect.exactCenterY(),
                         0,
                     )
+                down.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+                up.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
                 assertTrue(instrumentation.uiAutomation.injectInputEvent(down, true))
                 assertTrue(instrumentation.uiAutomation.injectInputEvent(up, true))
                 down.recycle()
@@ -243,10 +275,7 @@ class HaloDeviceTest {
                 val finish = System.currentTimeMillis() + 10000
                 var received = false
                 while (!received && System.currentTimeMillis() < finish) {
-                    received =
-                        instrumentation.uiAutomation.rootInActiveWindow
-                            ?.findAccessibilityNodeInfosByText("Touch passed through")
-                            ?.isNotEmpty() == true
+                    received = findProbe("Touch passed through") != null
                     if (!received) Thread.sleep(200)
                 }
                 assertTrue(
@@ -257,6 +286,7 @@ class HaloDeviceTest {
                 onMain {
                     context.stopService(android.content.Intent(context, OverlayService::class.java))
                 }
+                runBlocking { withTimeout(10000) { context.halo.running.first { !it } } }
             }
         }
     }
